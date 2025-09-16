@@ -27,14 +27,7 @@ export default function AuthForm({ onAuth, mode, teams = [], error }: AuthFormPr
     if (mode === "register" && (!email || !password || !team)) return
     if (mode === "login" && (!email || !password)) return
     
-    // Only allow .edu email addresses for registration
-    if (mode === "register") {
-      const emailDomain = email.split('@')[1]?.toLowerCase()
-      if (!emailDomain || !emailDomain.endsWith('.edu')) {
-        alert('Only .edu email addresses are allowed for registration. Please use your educational institution email.')
-        return
-      }
-    }
+    // Email validation - any valid email format is allowed
     
     onAuth(email, password, mode === "register" ? team : undefined)
   }
@@ -64,11 +57,6 @@ export default function AuthForm({ onAuth, mode, teams = [], error }: AuthFormPr
                 placeholder="Enter your email"
                 required
               />
-              {mode === "register" && (
-                <p className="text-xs text-gray-500 mt-1">
-                  .edu email addresses are not allowed for registration
-                </p>
-              )}
             </div>
 
             <div>

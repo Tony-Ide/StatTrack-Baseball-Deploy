@@ -2,6 +2,7 @@ import { useRouter } from 'next/router'
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import Layout from '@/components/Layout'
 
@@ -12,6 +13,8 @@ export default function VerifyPage() {
   const [message, setMessage] = useState('')
   const [isResending, setIsResending] = useState(false)
   const [isVerifying, setIsVerifying] = useState(false)
+  const [showEmailInput, setShowEmailInput] = useState(false)
+  const [resendEmail, setResendEmail] = useState('')
 
   // Do NOT auto-verify on load to avoid link scanners auto-confirming accounts
   useEffect(() => {
@@ -52,12 +55,35 @@ export default function VerifyPage() {
     }
   }
 
+  const handleResendClick = () => {
+    setShowEmailInput(true)
+  }
+
   const resendVerification = async () => {
+    if (!resendEmail.trim()) {
+      setMessage('Please enter your email address.')
+      return
+    }
+
     setIsResending(true)
     try {
-      // For now, we'll show a message to check the console
-      // In a real implementation, you'd need to get the user's email
-      setMessage('Please check the server console for the verification URL, or contact support.')
+      const response = await fetch('/api/auth/start-verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: resendEmail.trim() }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        setMessage('Verification email sent! Please check your inbox.')
+        setShowEmailInput(false)
+        setResendEmail('')
+      } else {
+        setMessage(data.message || 'Failed to resend verification email. Please try again.')
+      }
     } catch (error) {
       setMessage('Failed to resend verification email. Please try again.')
     } finally {
@@ -135,20 +161,56 @@ export default function VerifyPage() {
             
             {status === 'error' && (
               <div className="space-y-3">
-                <Button 
-                  onClick={resendVerification}
-                  disabled={isResending}
-                  className="w-full bg-orange-600 hover:bg-orange-700"
-                >
-                  {isResending ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Resending...
-                    </>
-                  ) : (
-                    'Resend Verification Email'
-                  )}
-                </Button>
+                {!showEmailInput ? (
+                  <Button 
+                    onClick={handleResendClick}
+                    className="w-full bg-orange-600 hover:bg-orange-700"
+                  >
+                    Resend Verification Email
+                  </Button>
+                ) : (
+                  <div className="space-y-3">
+                    <div>
+                      <label htmlFor="resend-email" className="block text-sm font-medium text-gray-700 mb-1">
+                        Email Address
+                      </label>
+                      <Input
+                        id="resend-email"
+                        type="email"
+                        value={resendEmail}
+                        onChange={(e) => setResendEmail(e.target.value)}
+                        placeholder="Enter your email address"
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="flex space-x-2">
+                      <Button 
+                        onClick={resendVerification}
+                        disabled={isResending}
+                        className="flex-1 bg-orange-600 hover:bg-orange-700"
+                      >
+                        {isResending ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Sending...
+                          </>
+                        ) : (
+                          'Send Verification Email'
+                        )}
+                      </Button>
+                      <Button 
+                        onClick={() => {
+                          setShowEmailInput(false)
+                          setResendEmail('')
+                        }}
+                        variant="outline"
+                        className="flex-1"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 <Button 
                   onClick={() => router.push('/login')}
                   variant="outline"
