@@ -112,6 +112,35 @@ export function parseGameDate(dateString: string): Date {
 }
 
 /**
+ * Normalize various import date formats to YYYY-MM-DD or return null
+ * Accepts inputs like:
+ *  - YYYY-MM-DD
+ *  - M/D/YYYY or MM/DD/YYYY
+ *  - Other parseable date strings
+ */
+export function normalizeImportDate(val: any): string | null {
+  if (val === '' || val === null || val === undefined) return null;
+  const s = String(val).trim();
+  if (!s) return null;
+
+  // Already ISO date
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  // MM/DD/YYYY or M/D/YY(YY)
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if (m) {
+    const [, mm, dd, y] = m;
+    const yyyy = y.length === 2 ? `20${y}` : y;
+    return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+  }
+
+  // Fallback: try native Date parsing
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString().split('T')[0];
+}
+
+/**
  * Convert IP decimal values to baseball notation for display only
  * This does NOT affect calculations - only changes appearance
  * @param ip - The innings pitched value (e.g., 5.3, 6.7, 2.1)

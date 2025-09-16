@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import formidable, { File } from 'formidable'
 import fs from 'fs'
 import jwt from 'jsonwebtoken'
-import { extractCookie } from '@/lib/utils'
+import { extractCookie, normalizeImportDate } from '@/lib/utils'
 
 const JWT_SECRET = process.env.JWT_SECRET
 
@@ -143,6 +143,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
   try {
     const csvString = fs.readFileSync(file.filepath, 'utf-8')
+    // 1) Validate header row strictly: exact columns, exact order
+    const REQUIRED_COLUMNS = [
+      'PitchNo','Date','Time','PAofInning','PitchofPA','Pitcher','PitcherId','PitcherThrows','PitcherTeam','Batter','BatterId','BatterSide','BatterTeam','PitcherSet','Inning','Top/Bottom','Outs','Balls','Strikes','TaggedPitchType','AutoPitchType','PitchCall','KorBB','TaggedHitType','PlayResult','OutsOnPlay','RunsScored','Notes','RelSpeed','VertRelAngle','HorzRelAngle','SpinRate','SpinAxis','Tilt','RelHeight','RelSide','Extension','VertBreak','InducedVertBreak','HorzBreak','PlateLocHeight','PlateLocSide','ZoneSpeed','VertApprAngle','HorzApprAngle','ZoneTime','ExitSpeed','Angle','Direction','HitSpinRate','PositionAt110X','PositionAt110Y','PositionAt110Z','Distance','LastTrackedDistance','Bearing','HangTime','pfxx','pfxz','x0','y0','z0','vx0','vy0','vz0','ax0','ay0','az0','HomeTeam','AwayTeam','Stadium','Level','League','GameID','PitchUID','EffectiveVelo','MaxHeight','MeasuredDuration','SpeedDrop','PitchLastMeasuredX','PitchLastMeasuredY','PitchLastMeasuredZ','ContactPositionX','ContactPositionY','ContactPositionZ','GameUID','UTCDate','UTCTime','LocalDateTime','UTCDateTime','AutoHitType','System','HomeTeamForeignID','AwayTeamForeignID','GameForeignID','Catcher','CatcherId','CatcherThrows','CatcherTeam','PlayID','PitchTrajectoryXc0','PitchTrajectoryXc1','PitchTrajectoryXc2','PitchTrajectoryYc0','PitchTrajectoryYc1','PitchTrajectoryYc2','PitchTrajectoryZc0','PitchTrajectoryZc1','PitchTrajectoryZc2','HitSpinAxis','HitTrajectoryXc0','HitTrajectoryXc1','HitTrajectoryXc2','HitTrajectoryXc3','HitTrajectoryXc4','HitTrajectoryXc5','HitTrajectoryXc6','HitTrajectoryXc7','HitTrajectoryXc8','HitTrajectoryYc0','HitTrajectoryYc1','HitTrajectoryYc2','HitTrajectoryYc3','HitTrajectoryYc4','HitTrajectoryYc5','HitTrajectoryYc6','HitTrajectoryYc7','HitTrajectoryYc8','HitTrajectoryZc0','HitTrajectoryZc1','HitTrajectoryZc2','HitTrajectoryZc3','HitTrajectoryZc4','HitTrajectoryZc5','HitTrajectoryZc6','HitTrajectoryZc7','HitTrajectoryZc8','ThrowSpeed','PopTime','ExchangeTime','TimeToBase','CatchPositionX','CatchPositionY','CatchPositionZ','ThrowPositionX','ThrowPositionY','ThrowPositionZ','BasePositionX','BasePositionY','BasePositionZ','ThrowTrajectoryXc0','ThrowTrajectoryXc1','ThrowTrajectoryXc2','ThrowTrajectoryYc0','ThrowTrajectoryYc1','ThrowTrajectoryYc2','ThrowTrajectoryZc0','ThrowTrajectoryZc1','ThrowTrajectoryZc2','PitchReleaseConfidence','PitchLocationConfidence','PitchMovementConfidence','HitLaunchConfidence','HitLandingConfidence','CatcherThrowCatchConfidence','CatcherThrowReleaseConfidence','CatcherThrowLocationConfidence'
+    ] as const
+
+    // Parse only the first line safely to get headers
+    const headerRows = parse(csvString, { to_line: 1 }) as string[][]
+    const headers = headerRows?.[0]?.map((h: any) => String(h).trim()) || []
+    const headerMismatch =
+      headers.length !== REQUIRED_COLUMNS.length ||
+      !headers.every((h, i) => h === REQUIRED_COLUMNS[i])
+    if (headerMismatch) {
+      return res.status(400).json({ error: 'invalid csv file format' })
+    }
+
     const records = parse(csvString, { columns: true, skip_empty_lines: true }) as TrackmanRow[]
     let imported = {
       teams: 0,
@@ -157,6 +172,41 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const debug: string[] = []
 
     debug.push(`Starting data import. Total records: ${records.length}`)
+
+    // --- Pre-validate required fields across all rows ---
+    let validationRow = 0;
+    for (const row of records) {
+      validationRow++;
+      const gameUIDVal = getField(row, 'GameUID', 'game_uid', 'gameUid');
+      if (!gameUIDVal) {
+        return res.status(400).json({ error: 'Missing GameUID' })
+      }
+      const gameForeignIDVal = getField(row, 'GameID', 'game_id');
+      if (!gameForeignIDVal) {
+        return res.status(400).json({ error: 'Missing GameID' })
+      }
+      const rawDateVal = getField(row, 'Date', 'date');
+      const normalizedDate = normalizeImportDate(rawDateVal);
+      if (!normalizedDate) {
+        return res.status(400).json({ error: 'Missing Date' })
+      }
+      const homeTeamVal = getField(row, 'HomeTeam', 'home_team', 'homeTeam');
+      const awayTeamVal = getField(row, 'AwayTeam', 'away_team', 'awayTeam');
+      if (!homeTeamVal) {
+        return res.status(400).json({ error: 'Missing HomeTeam' })
+      }
+      if (!awayTeamVal) {
+        return res.status(400).json({ error: 'Missing AwayTeam' })
+      }
+      const homeTeamFID = getField(row, 'HomeTeamForeignID', 'home_team_foreign_id', 'homeTeamForeignId');
+      const awayTeamFID = getField(row, 'AwayTeamForeignID', 'away_team_foreign_id', 'awayTeamForeignId');
+      if (!homeTeamFID) {
+        return res.status(400).json({ error: 'Missing HomeTeamForeignID' })
+      }
+      if (!awayTeamFID) {
+        return res.status(400).json({ error: 'Missing AwayTeamForeignID' })
+      }
+    }
 
     // --- Collect data for each table ---
     const teamsToUpsert = new Set<string>()
@@ -234,9 +284,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const gameUID = getField(row, 'GameUID', 'game_uid', 'gameUid');
       const gameForeignID = getField(row, 'GameForeignID', 'game_foreign_id', 'gameForeignId');
       const rawDate = getField(row, 'Date', 'date');
-      // Standardize the date to avoid timezone issues
-      const date = rawDate && rawDate !== '' ? 
-        new Date(rawDate + 'T00:00:00').toISOString().split('T')[0] : null;
+      // Normalize to YYYY-MM-DD without throwing on invalid inputs
+      const date = normalizeImportDate(rawDate);
       const stadium = getField(row, 'Stadium', 'stadium');
       const level = getField(row, 'Level', 'level');
       const league = getField(row, 'League', 'league');
@@ -604,7 +653,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       upsertedGameIds = new Set(filteredGamesArray.map(g => g.game_id));
     }
     imported.games = filteredGamesArray.length
-    debug.push(`Games imported: ${imported.games}`)
 
     // Pitches (filter by upserted games and players)
     debug.push(`Batch upserting pitches: ${pitchesToUpsert.length}`)
@@ -711,7 +759,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
     imported.hit_trajectory = filteredHitTrajectory.length
     debug.push(`Hit trajectory imported: ${imported.hit_trajectory}`)
-    res.status(200).json({ success: true, imported, debug })
+    res.status(200).json({ success: true, imported })
   } catch (err) {
     res.status(500).json({ error: (err as Error).message, debug: [(err as Error).message] })
   }
