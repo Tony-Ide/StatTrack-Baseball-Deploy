@@ -8,18 +8,25 @@ import Layout from '@/components/Layout'
 export default function VerifyPage() {
   const router = useRouter()
   const { token } = router.query
-  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading')
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [message, setMessage] = useState('')
   const [isResending, setIsResending] = useState(false)
+  const [isVerifying, setIsVerifying] = useState(false)
 
+  // Do NOT auto-verify on load to avoid link scanners auto-confirming accounts
   useEffect(() => {
-    if (token && typeof token === 'string') {
-      verifyToken(token)
-    }
+    // If there's no token in the URL, show an error message
+    if (!token) return
+    if (typeof token !== 'string') return
+    // Provide a friendly prompt to click the button
+    setStatus('idle')
+    setMessage('Click the button below to verify your email address.')
   }, [token])
 
   const verifyToken = async (token: string) => {
     try {
+      setIsVerifying(true)
+      setStatus('loading')
       const response = await fetch('/api/auth/verify-token', {
         method: 'POST',
         headers: {
@@ -40,6 +47,8 @@ export default function VerifyPage() {
     } catch (error) {
       setStatus('error')
       setMessage('An error occurred during verification. Please try again.')
+    } finally {
+      setIsVerifying(false)
     }
   }
 
@@ -58,6 +67,8 @@ export default function VerifyPage() {
 
   const getStatusIcon = () => {
     switch (status) {
+      case 'idle':
+        return <CheckCircle className="h-12 w-12 text-blue-500 opacity-60" />
       case 'loading':
         return <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
       case 'success':
@@ -69,6 +80,8 @@ export default function VerifyPage() {
 
   const getStatusTitle = () => {
     switch (status) {
+      case 'idle':
+        return 'Verify your email'
       case 'loading':
         return 'Verifying your email...'
       case 'success':
@@ -94,6 +107,23 @@ export default function VerifyPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {status !== 'success' && typeof token === 'string' && token && (
+              <Button 
+                onClick={() => verifyToken(token)}
+                disabled={isVerifying}
+                className="w-full bg-orange-600 hover:bg-orange-700"
+              >
+                {isVerifying ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Verifying...
+                  </>
+                ) : (
+                  'Verify Email'
+                )}
+              </Button>
+            )}
+
             {status === 'success' && (
               <Button 
                 onClick={() => router.push('/login')}
