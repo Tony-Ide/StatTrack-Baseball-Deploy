@@ -175,40 +175,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     debug.push(`Starting data import. Total records: ${records.length}`)
 
-    // --- Pre-validate required fields across all rows ---
-    let validationRow = 0;
-    for (const row of records) {
-      validationRow++;
+    // --- Filter out rows with missing required fields ---
+    const validRecords = records.filter((row, index) => {
       const gameUIDVal = getField(row, 'GameUID', 'game_uid', 'gameUid');
-      if (!gameUIDVal) {
-        return res.status(400).json({ error: 'Missing GameUID' })
-      }
       const gameForeignIDVal = getField(row, 'GameID', 'game_id');
-      if (!gameForeignIDVal) {
-        return res.status(400).json({ error: 'Missing GameID' })
-      }
       const rawDateVal = getField(row, 'Date', 'date');
       const normalizedDate = normalizeImportDate(rawDateVal);
-      if (!normalizedDate) {
-        return res.status(400).json({ error: 'Missing Date' })
-      }
       const homeTeamVal = getField(row, 'HomeTeam', 'home_team', 'homeTeam');
       const awayTeamVal = getField(row, 'AwayTeam', 'away_team', 'awayTeam');
-      if (!homeTeamVal) {
-        return res.status(400).json({ error: 'Missing HomeTeam' })
-      }
-      if (!awayTeamVal) {
-        return res.status(400).json({ error: 'Missing AwayTeam' })
-      }
       const homeTeamFID = getField(row, 'HomeTeamForeignID', 'home_team_foreign_id', 'homeTeamForeignId');
       const awayTeamFID = getField(row, 'AwayTeamForeignID', 'away_team_foreign_id', 'awayTeamForeignId');
-      if (!homeTeamFID) {
-        return res.status(400).json({ error: 'Missing HomeTeamForeignID' })
+      
+      const isValid = gameUIDVal && gameForeignIDVal && normalizedDate && homeTeamVal && awayTeamVal && homeTeamFID && awayTeamFID;
+      
+      if (!isValid) {
+        const missingFields = [];
+        if (!gameUIDVal) missingFields.push('GameUID');
+        if (!gameForeignIDVal) missingFields.push('GameID');
+        if (!normalizedDate) missingFields.push('Date');
+        if (!homeTeamVal) missingFields.push('HomeTeam');
+        if (!awayTeamVal) missingFields.push('AwayTeam');
+        if (!homeTeamFID) missingFields.push('HomeTeamForeignID');
+        if (!awayTeamFID) missingFields.push('AwayTeamForeignID');
+        
+        debug.push(`Row ${index + 1}: Skipped due to missing required fields: ${missingFields.join(', ')}`);
       }
-      if (!awayTeamFID) {
-        return res.status(400).json({ error: 'Missing AwayTeamForeignID' })
-      }
-    }
+      
+      return isValid;
+    });
+    
+    debug.push(`Filtered records: ${records.length} total, ${validRecords.length} valid, ${records.length - validRecords.length} skipped`);
+    
+    // Use filtered records for processing
+    const recordsToProcess = validRecords;
 
     // --- Collect data for each table ---
     const teamsToUpsert = new Set<string>()
@@ -223,7 +222,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     let rowIndex = 0;
     // Build a mapping from team name to team_id (foreign ID) for this batch
     const teamNameToId: Record<string, string> = {};
-    for (const row of records) {
+    for (const row of recordsToProcess) {
       const homeTeamForeignId = getField(row, 'HomeTeamForeignID', 'home_team_foreign_id', 'homeTeamForeignId');
       const homeTeam = getField(row, 'HomeTeam', 'home_team', 'homeTeam');
       if (homeTeamForeignId && homeTeam) teamNameToId[homeTeam] = String(homeTeamForeignId);
@@ -231,7 +230,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const awayTeam = getField(row, 'AwayTeam', 'away_team', 'awayTeam');
       if (awayTeamForeignId && awayTeam) teamNameToId[awayTeam] = String(awayTeamForeignId);
     }
-    for (const row of records) {
+    for (const row of recordsToProcess) {
       rowIndex++;
       // --- TEAMS ---
       const homeTeamForeignId = getField(row, 'HomeTeamForeignID', 'home_team_foreign_id', 'homeTeamForeignId');
