@@ -143,7 +143,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
   try {
     const csvString = fs.readFileSync(file.filepath, 'utf-8')
-    // 1) Validate header row strictly: exact columns, exact order
+    // 1) Validate header row: must contain all required columns (order doesn't matter)
     const REQUIRED_COLUMNS = [
       'PitchNo','Date','Time','PAofInning','PitchofPA','Pitcher','PitcherId','PitcherThrows','PitcherTeam','Batter','BatterId','BatterSide','BatterTeam','PitcherSet','Inning','Top/Bottom','Outs','Balls','Strikes','TaggedPitchType','AutoPitchType','PitchCall','KorBB','TaggedHitType','PlayResult','OutsOnPlay','RunsScored','Notes','RelSpeed','VertRelAngle','HorzRelAngle','SpinRate','SpinAxis','Tilt','RelHeight','RelSide','Extension','VertBreak','InducedVertBreak','HorzBreak','PlateLocHeight','PlateLocSide','ZoneSpeed','VertApprAngle','HorzApprAngle','ZoneTime','ExitSpeed','Angle','Direction','HitSpinRate','PositionAt110X','PositionAt110Y','PositionAt110Z','Distance','LastTrackedDistance','Bearing','HangTime','pfxx','pfxz','x0','y0','z0','vx0','vy0','vz0','ax0','ay0','az0','HomeTeam','AwayTeam','Stadium','Level','League','GameID','PitchUID','EffectiveVelo','MaxHeight','MeasuredDuration','SpeedDrop','PitchLastMeasuredX','PitchLastMeasuredY','PitchLastMeasuredZ','ContactPositionX','ContactPositionY','ContactPositionZ','GameUID','UTCDate','UTCTime','LocalDateTime','UTCDateTime','AutoHitType','System','HomeTeamForeignID','AwayTeamForeignID','GameForeignID','Catcher','CatcherId','CatcherThrows','CatcherTeam','PlayID','PitchTrajectoryXc0','PitchTrajectoryXc1','PitchTrajectoryXc2','PitchTrajectoryYc0','PitchTrajectoryYc1','PitchTrajectoryYc2','PitchTrajectoryZc0','PitchTrajectoryZc1','PitchTrajectoryZc2','HitSpinAxis','HitTrajectoryXc0','HitTrajectoryXc1','HitTrajectoryXc2','HitTrajectoryXc3','HitTrajectoryXc4','HitTrajectoryXc5','HitTrajectoryXc6','HitTrajectoryXc7','HitTrajectoryXc8','HitTrajectoryYc0','HitTrajectoryYc1','HitTrajectoryYc2','HitTrajectoryYc3','HitTrajectoryYc4','HitTrajectoryYc5','HitTrajectoryYc6','HitTrajectoryYc7','HitTrajectoryYc8','HitTrajectoryZc0','HitTrajectoryZc1','HitTrajectoryZc2','HitTrajectoryZc3','HitTrajectoryZc4','HitTrajectoryZc5','HitTrajectoryZc6','HitTrajectoryZc7','HitTrajectoryZc8','ThrowSpeed','PopTime','ExchangeTime','TimeToBase','CatchPositionX','CatchPositionY','CatchPositionZ','ThrowPositionX','ThrowPositionY','ThrowPositionZ','BasePositionX','BasePositionY','BasePositionZ','ThrowTrajectoryXc0','ThrowTrajectoryXc1','ThrowTrajectoryXc2','ThrowTrajectoryYc0','ThrowTrajectoryYc1','ThrowTrajectoryYc2','ThrowTrajectoryZc0','ThrowTrajectoryZc1','ThrowTrajectoryZc2','PitchReleaseConfidence','PitchLocationConfidence','PitchMovementConfidence','HitLaunchConfidence','HitLandingConfidence','CatcherThrowCatchConfidence','CatcherThrowReleaseConfidence','CatcherThrowLocationConfidence'
     ] as const
@@ -151,11 +151,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Parse only the first line safely to get headers
     const headerRows = parse(csvString, { to_line: 1 }) as string[][]
     const headers = headerRows?.[0]?.map((h: any) => String(h).trim()) || []
-    const headerMismatch =
-      headers.length !== REQUIRED_COLUMNS.length ||
-      !headers.every((h, i) => h === REQUIRED_COLUMNS[i])
-    if (headerMismatch) {
-      return res.status(400).json({ error: 'invalid csv file format' })
+    
+    // Check if all required columns are present (order doesn't matter)
+    const missingColumns = REQUIRED_COLUMNS.filter(col => !headers.includes(col))
+    if (missingColumns.length > 0) {
+      return res.status(400).json({ 
+        error: `Missing required columns: ${missingColumns.join(', ')}` 
+      })
     }
 
     const records = parse(csvString, { columns: true, skip_empty_lines: true }) as TrackmanRow[]
